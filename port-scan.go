@@ -1,14 +1,31 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"log"
 	"net"
 	"sort"
+	"strconv"
+	"strings"
 )
 
-func portsacq(ports, results chan int, address string) {
-	for p := range ports {
-		finad := fmt.Sprintf(address+":"+"%d", p)
+const (
+	porterror = "Invalid Port Format"
+)
+
+type ConnDetail struct {
+	addr   string
+	prange string
+	lrange int
+	hrange int
+	open   []int
+}
+
+func (x ConnDetail) pscan(capa, results chan int) {
+	for p := range capa {
+		finad := fmt.Sprintf(x.addr+":"+"%d", p)
+		log.Println("scanning port", p)
 		conn, err := net.Dial("tcp", finad)
 		if err != nil {
 			results <- 0
@@ -18,36 +35,49 @@ func portsacq(ports, results chan int, address string) {
 		results <- p
 	}
 }
+func (x ConnDetail) splitrange(ports *[]int) error {
+	ranges := strings.Split(x.prange, "-")
+	x.lrange, _ = strconv.Atoi(ranges[0])
+	x.hrange, _ = strconv.Atoi(ranges[1])
+	if x.lrange > x.hrange || x.lrange < 1 || x.hrange > 65535 {
+		return errors.New(porterror)
+	}
+	for ; x.lrange <= x.hrange; x.lrange++ {
+		*ports = append(*ports, x.lrange)
+	}
+	return nil
+}
 func main() {
-	// acquiring the target address
-	var address string
-	fmt.Println("Type the target address (Domain/IP)")
-	fmt.Scanln(&address)
-
+	var details ConnDetail
+	fmt.Println("Type the target address (Domain/IP):")
+	fmt.Scanln(&details.addr)
+	fmt.Println("The range of ports to scan (example: 100-200): ")
+	fmt.Scanln(&details.prange)
+	ports := []int{}
+	details.splitrange(&ports)
 	results := make(chan int)
-	ports := make(chan int, 100)
-	var openports []int
+	capacity := make(chan int, 100)
 
-	for i := 0; i < cap(ports); i++ {
-		go portsacq(ports, results, address)
+	for i := 0; i < cap(capacity); i++ {
+		go details.pscan(capacity, results)
 	}
 
 	go func() {
-		for i := 0; i <= 1024; i++ {
-			ports <- i
+		for _, p := range ports {
+			capacity <- p
 		}
 	}()
 
-	for i := 0; i < 1024; i++ {
+	for i := 0; i < len(ports); i++ {
 		port := <-results
 		if port != 0 {
-			openports = append(openports, port)
+			details.open = append(details.open, port)
 		}
 	}
-	close(ports)
+	close(capacity)
 	close(results)
-	sort.Ints(openports)
-	for _, port := range openports {
-		fmt.Printf("The %d port is open\n", port)
+	sort.Ints(details.open)
+	for _, port := range details.open {
+		log.Printf("Port %d is open\n", port)
 	}
 }
