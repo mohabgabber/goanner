@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -9,10 +8,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-)
-
-const (
-	porterror = "Invalid Port Format"
 )
 
 func pscan(capa, results chan int, addr string) {
@@ -32,7 +27,7 @@ func splitrange(ports *[]int, lrange, hrange int, prange string) error {
 	lrange, _ = strconv.Atoi(ranges[0])
 	hrange, _ = strconv.Atoi(ranges[1])
 	if lrange > hrange || lrange < 1 || hrange > 65535 {
-		return errors.New(porterror)
+		log.Fatal("Error: Wrong Port Format")
 	}
 	for ; lrange <= hrange; lrange++ {
 		*ports = append(*ports, lrange)
