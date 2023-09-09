@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"net"
@@ -14,18 +15,9 @@ const (
 	porterror = "Invalid Port Format"
 )
 
-type ConnDetail struct {
-	addr   string
-	prange string
-	lrange int
-	hrange int
-	open   []int
-}
-
-func (x ConnDetail) pscan(capa, results chan int) {
+func pscan(capa, results chan int, addr string) {
 	for p := range capa {
-		finad := fmt.Sprintf(x.addr+":"+"%d", p)
-		log.Println("scanning port", p)
+		finad := fmt.Sprintf(addr+":"+"%d", p)
 		conn, err := net.Dial("tcp", finad)
 		if err != nil {
 			results <- 0
@@ -35,31 +27,41 @@ func (x ConnDetail) pscan(capa, results chan int) {
 		results <- p
 	}
 }
-func (x ConnDetail) splitrange(ports *[]int) error {
-	ranges := strings.Split(x.prange, "-")
-	x.lrange, _ = strconv.Atoi(ranges[0])
-	x.hrange, _ = strconv.Atoi(ranges[1])
-	if x.lrange > x.hrange || x.lrange < 1 || x.hrange > 65535 {
+func splitrange(ports *[]int, lrange, hrange int, prange string) error {
+	ranges := strings.Split(prange, "-")
+	lrange, _ = strconv.Atoi(ranges[0])
+	hrange, _ = strconv.Atoi(ranges[1])
+	if lrange > hrange || lrange < 1 || hrange > 65535 {
 		return errors.New(porterror)
 	}
-	for ; x.lrange <= x.hrange; x.lrange++ {
-		*ports = append(*ports, x.lrange)
+	for ; lrange <= hrange; lrange++ {
+		*ports = append(*ports, lrange)
 	}
 	return nil
 }
+
 func main() {
-	var details ConnDetail
-	fmt.Println("Type the target address (Domain/IP):")
-	fmt.Scanln(&details.addr)
-	fmt.Println("The range of ports to scan (example: 100-200): ")
-	fmt.Scanln(&details.prange)
+	// Target Address And Port Range (By The User)
+	var addr string
+	var prange string
+	flag.StringVar(&addr, "t", "127.0.0.1", "Target Address")
+	flag.StringVar(&prange, "p", "1-1024", "Port Range")
+	flag.Parse()
+	log.Printf("Scanning The Port Range: %s \t On Target: %s", prange, addr)
+	// Stores The Port Range
+	var lrange int
+	var hrange int
 	ports := []int{}
-	details.splitrange(&ports)
+	splitrange(&ports, lrange, hrange, prange)
+	// Stores The Open Ports
+	var open []int
+	// Stores Open Ports
 	results := make(chan int)
+	// Limits Execution
 	capacity := make(chan int, 100)
 
 	for i := 0; i < cap(capacity); i++ {
-		go details.pscan(capacity, results)
+		go pscan(capacity, results, addr)
 	}
 
 	go func() {
@@ -71,13 +73,14 @@ func main() {
 	for i := 0; i < len(ports); i++ {
 		port := <-results
 		if port != 0 {
-			details.open = append(details.open, port)
+			open = append(open, port)
 		}
 	}
 	close(capacity)
 	close(results)
-	sort.Ints(details.open)
-	for _, port := range details.open {
+	sort.Ints(open)
+	log.Printf("Discovered %d Open Ports", len(open))
+	for _, port := range open {
 		log.Printf("Port %d is open\n", port)
 	}
 }
